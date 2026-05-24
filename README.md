@@ -140,7 +140,7 @@ python run.py
 ---
 
 ## 📄 License
-Distributed under the MIT License. See `LICENSE` (if present) or source headers for detail.
+This project is proprietary and confidential. All rights are reserved by Arnav Pundir. See the `LICENSE` file for details.
 
 ---
 
