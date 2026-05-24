@@ -21,6 +21,48 @@ from devin.system_ops import (
 from devin.ai_engine import AIEngine, set_api_key
 
 
+def replace_number_words(text):
+    """Replace spoken/written number words (zero to one hundred) with digits."""
+    num_words = {
+        'zero': 0, 'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
+        'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10,
+        'eleven': 11, 'twelve': 12, 'thirteen': 13, 'fourteen': 14,
+        'fifteen': 15, 'sixteen': 16, 'seventeen': 17, 'eighteen': 18,
+        'nineteen': 19, 'twenty': 20, 'thirty': 30, 'forty': 40,
+        'fifty': 50, 'sixty': 60, 'seventy': 70, 'eighty': 80,
+        'ninety': 90, 'hundred': 100
+    }
+    
+    text_clean = text.lower().replace('-', ' ')
+    words = text_clean.split()
+    
+    result = []
+    i = 0
+    while i < len(words):
+        if words[i] in num_words:
+            num_seq = []
+            while i < len(words) and (words[i] in num_words or words[i] == 'and'):
+                num_seq.append(words[i])
+                i += 1
+            if num_seq and num_seq[-1] == 'and':
+                num_seq.pop()
+                i -= 1
+            val = 0
+            if 'hundred' in num_seq:
+                idx = num_seq.index('hundred')
+                prefix = num_seq[idx-1] if idx > 0 else 'one'
+                val += num_words.get(prefix, 1) * 100
+                num_seq = num_seq[idx+1:]
+            for w in num_seq:
+                if w in num_words:
+                    val += num_words[w]
+            result.append(str(val))
+        else:
+            result.append(words[i])
+            i += 1
+    return ' '.join(result)
+
+
 class MayaAssistant(QObject):
     """Core assistant that processes commands and produces responses."""
 
@@ -41,6 +83,7 @@ class MayaAssistant(QObject):
 
         query = text.lower().strip()
         query_clean = re.sub(r'[^\w\s]', '', query)
+        query_clean = replace_number_words(query_clean)
 
         # ── API Key Configuration ──
         if query_clean.startswith('set api key') or query_clean.startswith('set gemini key'):
@@ -65,18 +108,30 @@ class MayaAssistant(QObject):
             return f"Today is {now}."
 
         # ── Volume Control (flexible matching) ──
-        vol_match = re.search(r'(?:set|change|adjust|put)\s+(?:the\s+)?volume\s+(?:to\s+)?(\d+)', query_clean)
-        if vol_match:
-            return set_volume(int(vol_match.group(1)))
+        if any(w in query_clean for w in ['volume', 'sound', 'audio', 'speaker', 'speakers', 'quieter', 'louder']):
+            # Check for relative change with a specific number, e.g., "increase volume by 20"
+            by_match = re.search(r'(?:increase|up|raise|turn\s+up|louder)\s+(?:by\s+)?(\d+)', query_clean)
+            if by_match:
+                current = get_volume()
+                return set_volume(min(100, (current if current >= 0 else 50) + int(by_match.group(1))))
+                
+            by_match_down = re.search(r'(?:decrease|down|lower|turn\s+down|quieter|reduce)\s+(?:by\s+)?(\d+)', query_clean)
+            if by_match_down:
+                current = get_volume()
+                return set_volume(max(0, (current if current >= 0 else 50) - int(by_match_down.group(1))))
 
-        # "volume up", "increase volume", "turn up the volume", "raise volume"
-        if re.search(r'(?:volume\s+up|increase\s+(?:the\s+)?volume|turn\s+up\s+(?:the\s+)?volume|raise\s+(?:the\s+)?volume|louder)', query_clean):
+            # Check for absolute value setting, e.g., "set volume to 80", "volume 50"
+            val_match = re.search(r'(\d+)', query_clean)
+            if val_match:
+                return set_volume(int(val_match.group(1)))
+
+        # Relative change without specified number (default +/- 10%)
+        if any(w in query_clean for w in ['volume up', 'increase volume', 'turn up the volume', 'raise volume', 'louder', 'turn up volume', 'make it louder', 'turn the volume up']):
             current = get_volume()
             new_vol = min(100, (current if current >= 0 else 50) + 10)
             return set_volume(new_vol)
 
-        # "volume down", "decrease volume", "turn down the volume", "lower volume", "quieter"
-        if re.search(r'(?:volume\s+down|decrease\s+(?:the\s+)?volume|turn\s+down\s+(?:the\s+)?volume|lower\s+(?:the\s+)?volume|reduce\s+(?:the\s+)?volume|quieter)', query_clean):
+        if any(w in query_clean for w in ['volume down', 'decrease volume', 'turn down the volume', 'lower volume', 'reduce volume', 'quieter', 'turn down volume', 'make it quieter', 'turn the volume down']):
             current = get_volume()
             new_vol = max(0, (current if current >= 0 else 50) - 10)
             return set_volume(new_vol)
@@ -86,24 +141,42 @@ class MayaAssistant(QObject):
         if 'unmute' in query_clean:
             return set_volume(50)
 
-        if re.search(r'(?:what|current|check)\s*(?:is\s+)?(?:the\s+)?volume', query_clean):
+        if re.search(r'(?:what|current|check|get)\s*(?:is\s+)?(?:the\s+)?volume', query_clean):
             v = get_volume()
             return f"Current volume is {v}%." if v >= 0 else "Could not read volume."
 
         # ── Brightness Control (flexible matching) ──
-        br_match = re.search(r'(?:set|change|adjust|put)\s+(?:the\s+)?brightness\s+(?:to\s+)?(\d+)', query_clean)
-        if br_match:
-            return set_brightness(int(br_match.group(1)))
+        if any(w in query_clean for w in ['brightness', 'screen', 'display', 'backlight', 'brighter', 'dimmer', 'dim']):
+            # Check for relative change with a specific number, e.g., "increase brightness by 20"
+            by_match = re.search(r'(?:increase|up|raise|turn\s+up|brighter|make\s+brighter)\s+(?:by\s+)?(\d+)', query_clean)
+            if by_match:
+                current = get_brightness()
+                return set_brightness(min(100, (current if current >= 0 else 50) + int(by_match.group(1))))
+                
+            by_match_down = re.search(r'(?:decrease|down|lower|turn\s+down|dimmer|dim|reduce)\s+(?:by\s+)?(\d+)', query_clean)
+            if by_match_down:
+                current = get_brightness()
+                return set_brightness(max(10, (current if current >= 0 else 50) - int(by_match_down.group(1))))
 
-        if re.search(r'(?:brightness\s+up|increase\s+(?:the\s+)?brightness|turn\s+up\s+(?:the\s+)?brightness|brighter)', query_clean):
+            # Check for absolute value setting, e.g., "set screen to 80", "brightness 50"
+            val_match = re.search(r'(\d+)', query_clean)
+            if val_match:
+                return set_brightness(int(val_match.group(1)))
+
+        # Relative change without specified number (default +/- 10%)
+        if any(w in query_clean for w in ['brightness up', 'increase brightness', 'turn up the brightness', 'brighter', 'make screen brighter', 'turn up brightness', 'make display brighter']):
             current = get_brightness()
             new_br = min(100, (current if current >= 0 else 50) + 10)
             return set_brightness(new_br)
 
-        if re.search(r'(?:brightness\s+down|decrease\s+(?:the\s+)?brightness|turn\s+down\s+(?:the\s+)?brightness|lower\s+(?:the\s+)?brightness|dimmer|dim)', query_clean):
+        if any(w in query_clean for w in ['brightness down', 'decrease brightness', 'turn down the brightness', 'dimmer', 'dim', 'turn down brightness', 'make screen dimmer', 'make display dimmer']):
             current = get_brightness()
             new_br = max(10, (current if current >= 0 else 50) - 10)
             return set_brightness(new_br)
+
+        if re.search(r'(?:what|current|check|get)\s*(?:is\s+)?(?:the\s+)?brightness', query_clean):
+            v = get_brightness()
+            return f"Current brightness is {v}%." if v >= 0 else "Could not read brightness."
 
         # ── App Control ──
         open_match = re.search(r'(?:open|launch|start|run)\s+(.+)', query_clean)
