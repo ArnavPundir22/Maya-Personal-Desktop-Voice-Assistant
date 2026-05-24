@@ -5,6 +5,7 @@
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue?style=flat-square&logo=python)](https://www.python.org/)
 [![UI](https://img.shields.io/badge/UI-PyQt5-purple?style=flat-square&logo=qt)](https://www.qt.io/)
 [![Engine](https://img.shields.io/badge/AI%20Engine-Gemini%202.5-green?style=flat-square&logo=google-gemini)](https://aistudio.google.com/)
+[![GitHub](https://img.shields.io/badge/GitHub-Repository-181717?style=flat-square&logo=github)](https://github.com/ArnavPundir22/Maya-Personal-Desktop-Voice-Assistant/tree/main)
 
 Maya is a modern, high-performance, dark-themed personal desktop voice assistant developed for **Ubuntu Linux**. It blends natural language processing via Google's Gemini models with robust system-level automation to provide a fluid, hands-free computing experience. 
 
@@ -48,7 +49,7 @@ Featuring a premium **PyQt5 dashboard**, **animated audio waveforms**, and an in
 ## 🛠️ Project Structure
 
 ```text
-Devin-Personal-Desktop-Voice-Assistant/
+Maya-Personal-Desktop-Voice-Assistant/
 ├── run.py                 # Application launcher and GUI entry point
 ├── requirements.txt       # Python library dependencies
 ├── README.md              # Project documentation
@@ -80,8 +81,8 @@ Navigate to the repository folder, activate a virtual environment, and install t
 
 ```bash
 # Clone the repository (if not already local)
-git clone https://github.com/ArnavPundir22/Devin-Personal-Desktop-Voice-Assistant.git
-cd Devin-Personal-Desktop-Voice-Assistant
+git clone https://github.com/ArnavPundir22/Maya-Personal-Desktop-Voice-Assistant.git
+cd Maya-Personal-Desktop-Voice-Assistant
 
 # Create & activate a virtual environment
 python3 -m venv venv
