@@ -1,108 +1,146 @@
-# Devin - AI Desktop Assistant
+# 🤖 Maya AI — Personal Desktop Voice Assistant
+### *Ubuntu / Linux Edition v2.0*
 
-Devin is a Python-based desktop AI assistant that offers voice and text control over various system functionalities and web interactions. It comes with a modern PyQt5 GUI, natural language processing via Google's Speech Recognition API, and text-to-speech responses using `pyttsx3`. Devin also supports brightness and volume adjustments, browser interactions, and application control.
+[![OS](https://img.shields.io/badge/OS-Ubuntu%20%2F%20Linux-orange?style=flat-square&logo=ubuntu)](https://ubuntu.com/)
+[![Python](https://img.shields.io/badge/Python-3.8%2B-blue?style=flat-square&logo=python)](https://www.python.org/)
+[![UI](https://img.shields.io/badge/UI-PyQt5-purple?style=flat-square&logo=qt)](https://www.qt.io/)
+[![Engine](https://img.shields.io/badge/AI%20Engine-Gemini%202.5-green?style=flat-square&logo=google-gemini)](https://aistudio.google.com/)
 
----
+Maya is a modern, high-performance, dark-themed personal desktop voice assistant developed for **Ubuntu Linux**. It blends natural language processing via Google's Gemini models with robust system-level automation to provide a fluid, hands-free computing experience. 
 
-## Creator
-**Developed by:** *Arnav Pundir* 
-
----
-
-## Features
-
-- 🎤 **Voice Command Activation**: Say "listen" to activate listening mode.
-- 🧠 **Natural Language Understanding**: Responds to casual and functional queries.
-- 💬 **GUI Command Console**: Type and execute commands directly from the GUI.
-- 📦 **Web Automation**: Opens Google, YouTube, ChatGPT, and more.
-- 🔊 **System Volume Control**: Adjust system volume using voice.
-- 💡 **Brightness Control**: Set screen brightness from 0% to 100%.
-- 🖥 **App Control**: Open and close apps like Notepad and Microsoft Edge.
-- 📺 **Media Playback Control**: Pause, play, skip, and adjust volume.
-- 🤖 **Joke & Casual Talk**: Interact casually for a friendly experience.
+Featuring a premium **PyQt5 dashboard**, **animated audio waveforms**, and an intelligent **offline fallback system**, Maya lets you control system parameters, search the web, ask general queries, and launch applications using voice or text.
 
 ---
 
-## Installation
+## 🎨 Preview & UI Highlights
+- **Glassmorphism Theme:** A sleek, curated dark aesthetic built with modern typography and gradients.
+- **Dynamic Waveform Visualizer:** Re-renders in real-time to match active listening and speaking states.
+- **Thread-Safe Chat Bubbles:** Separate styled blocks for user queries and Maya's responses.
+- **Settings Dialog:** Input and securely store your Gemini API Key directly inside the app.
 
-### Prerequisites
-- Python 3.7+
+---
 
-### Required Packages
-Install the required dependencies:
+## ⚡ Features
+
+### 1. 🧠 Multi-Layer AI Engine
+*   **Gemini Integration:** Powered by the new `google-genai` SDK. Automatically queries `gemini-2.5-flash` (and falls back to `gemini-2.0-flash-lite`, `gemini-2.0-flash`, etc.) to handle rate limits or regional quota differences.
+*   **Rule-Based Smart Fallback:** When offline or when API limits are reached, Maya handles core interactions, greetings, programming jokes, and system actions smoothly without crashing.
+
+### 2. 🖥️ OS & Hardware Automation
+*   🔊 **Audio & Volume:** Real-time volume management via PulseAudio (`pulsectl`) or ALSA (`amixer`). Adjust to specific values, mute, unmute, or use relative commands ("louder", "quieter").
+*   💡 **Screen Brightness:** Precise brightness adjustments via GNOME D-Bus (`gdbus`) or `xrandr` software dimming.
+*   📸 **Screenshots:** Captures the full screen and saves it directly to `~/Pictures/` using `gnome-screenshot` or `scrot`.
+*   🔒 **Lock System:** Locks the desktop session instantly using standard system services (`loginctl`).
+
+### 3. 📦 App & Media Management
+*   🚀 **App Launcher:** Opens core system apps (Terminal, File Manager, VS Code, Browser, Text Editor, Calculator) using an optimized matching registry.
+*   ❌ **Process Terminator:** Closes running processes cleanly by name using `psutil`.
+*   📺 **Media Playback:** Pause, resume, skip, or change tracks for MPRIS-compatible players (Spotify, VLC, Chrome) using `playerctl` or `xdotool` key signals.
+
+### 4. 🌐 Web & Utilities
+*   🔍 **Web Search:** Instantly trigger Google searches or search and play video content directly on YouTube.
+*   📚 **Wikipedia:** Pulls concise, two-sentence summaries on any query topic.
+*   🌤️ **Real-Time Weather:** Retrieves instant weather reports for your location or any specified city using `wttr.in`.
+*   🔢 **Safe Calculator:** Parses and evaluates mathematical expressions using a secure evaluation sandbox.
+
+---
+
+## 🛠️ Project Structure
+
+```text
+Devin-Personal-Desktop-Voice-Assistant/
+├── run.py                 # Application launcher and GUI entry point
+├── requirements.txt       # Python library dependencies
+├── README.md              # Project documentation
+└── devin/                 # Package directory
+    ├── __init__.py        # Versioning & package definition
+    ├── ai_engine.py       # Google Gemini integration and fallback logic
+    ├── assistant.py       # Core command routing and regex parser
+    ├── gui.py             # Premium PyQt5 UI, Threads & Waveform logic
+    └── system_ops.py      # Ubuntu system shell wrappers and utilities
+```
+
+---
+
+## 📥 Installation
+
+### 1. Install Ubuntu System Dependencies
+To enable mic recording, audio playback, screenshot utilities, and media controls, run:
 
 ```bash
+sudo apt update
+sudo apt install -y python3-pyaudio portaudio19-dev ffmpeg ffplay playerctl xdotool scrot gnome-screenshot
+```
+
+> [!NOTE]
+> `ffplay` (part of `ffmpeg`) is recommended for crystal-clear playback of the natural Google TTS voice engine.
+
+### 2. Set Up Virtual Environment & Dependencies
+Navigate to the repository folder, activate a virtual environment, and install the Python dependencies:
+
+```bash
+# Clone the repository (if not already local)
+git clone https://github.com/ArnavPundir22/Devin-Personal-Desktop-Voice-Assistant.git
+cd Devin-Personal-Desktop-Voice-Assistant
+
+# Create & activate a virtual environment
+python3 -m venv venv
+source venv/bin/env/activate  # Or 'source venv/bin/activate'
+
+# Install requirements
 pip install -r requirements.txt
 ```
 
-`requirements.txt` should include:
-```txt
-pyqt5
-pyttsx3
-speechrecognition
-wikipedia
-pyautogui
-psutil
-screen-brightness-control
-pycaw
-comtypes
-```
-
 ---
 
-## How to Use
+## 🚀 How to Use
 
-### Launch Devin
+### Launching the Assistant
+Make sure your virtual environment is active, then run:
+
 ```bash
-python devin.py
+python run.py
 ```
 
-### Modes of Interaction
-- **Voice Mode**: Activated by saying "listen"
-- **Text Mode**: Type commands in the GUI text input
+### Interaction Modes
+*   **Voice Control:** Click the 🎤 button to toggle voice input. Calibrate mic and speak. Alternatively, if Maya is in Standby mode, simply say **"listen"** to wake her up!
+*   **Standby / Silent Mode:** Say **"stop listening"** or **"shut up"** to place Maya in Standby (or click the microphone icon). She will only run text commands and won't capture ambient voice until wake words are heard.
+*   **Text Control:** Type your commands in the bottom input bar and press **Enter** or click the send (➤) icon.
 
-### Supported Voice Commands
-- "What is the time"
-- "Open Google/YouTube/ChatGPT"
-- "Set brightness to 50"
-- "Set volume to 30"
-- "Search for Python tutorials"
-- "Play lo-fi on YouTube"
-- "Close notepad/edge/browser"
-- "Exit" or "Quit"
-- Casual phrases: "Tell me a joke", "Who are you?", etc.
+### 🔑 Connecting Google Gemini AI
+1. Go to [Google AI Studio](https://aistudio.google.com/) and grab a free API Key.
+2. In the Maya dashboard, click the **⚙️ (Settings)** icon in the top right.
+3. Paste your key and click **OK**.
+4. Once connected, the status badge will switch to **● AI Online**, unlocking natural AI chat!
 
 ---
 
-## Project Structure
-```
-Devin_Assistant/
-├── devin.py               # Main application file
-├── README.md              # Project overview and usage
-├── requirements.txt       # Python dependencies
-```
+## 🗣️ Voice & Text Command Reference
+
+| Action | Example Command | Command Variants |
+| :--- | :--- | :--- |
+| **System Info** | "Show system status" | *cpu usage, ram usage, disk space, battery* |
+| **Volume Control** | "Set volume to 75" | *volume up, volume down, louder, mute, unmute* |
+| **Brightness Control** | "Set brightness to 50" | *brightness up, dimmer, brighter* |
+| **Open Applications** | "Open VS Code" | *open browser, open terminal, open youtube.com* |
+| **Close Applications** | "Close Firefox" | *close notepad, close browser, stop spotify* |
+| **Take Screenshot** | "Take a screenshot" | *screenshot, capture screen* |
+| **Math calculations** | "Calculate 15 * (48 / 6)" | *solve, what is, compute* |
+| **Real-time Weather** | "Weather in London" | *weather, current weather* |
+| **Wikipedia Info** | "Wikipedia Python programming" | *wiki Albert Einstein* |
+| **Web Searching** | "Search for Ubuntu tips" | *google machine learning, look up rust lang* |
+| **Play YouTube** | "Play lo-fi on YouTube" | *play synthwave on youtube* |
+| **Media Playback** | "Next song" | *pause music, resume, skip, previous track* |
+| **Lock Screen** | "Lock my computer" | *lock screen, lock pc* |
+| **Deactivate Voice** | "Stop listening" | *shut up, standby* |
+| **General Chat** | "Who are you?" | *tell me a joke, general trivia questions* |
+| **Shutdown Maya** | "Goodbye" | *exit, quit, close maya* |
 
 ---
 
-## Contributing
-Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
+## 📄 License
+Distributed under the MIT License. See `LICENSE` (if present) or source headers for detail.
 
 ---
 
-## License
-MIT License
-
----
-
-## Acknowledgements
-- [PyQt5](https://pypi.org/project/PyQt5/)
-- [Google Speech Recognition](https://pypi.org/project/SpeechRecognition/)
-- [pyttsx3](https://pypi.org/project/pyttsx3/)
-- [Wikipedia API](https://pypi.org/project/wikipedia/)
-- [pyautogui](https://pypi.org/project/PyAutoGUI/)
-- [pycaw](https://github.com/AndreMiras/pycaw)
-
----
-
-_Enjoy using Devin!_
-
+*Developed by **Arnav Pundir** &mdash; Enjoy using Maya!*

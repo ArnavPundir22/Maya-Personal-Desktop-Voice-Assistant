@@ -1,0 +1,18 @@
+# GUI and Interface
+PyQt5>=5.15.0
+
+# Speech and Voice
+SpeechRecognition>=3.10.0
+gTTS>=2.5.0
+pyttsx3>=2.90
+
+# AI Integration
+google-genai>=2.6.0
+
+# System Utilities
+psutil>=5.9.0
+pulsectl>=24.0.0
+requests>=2.31.0
+wikipedia>=1.4.0
+screen-brightness-control>=0.27.0
+PyAutoGUI>=0.9.54
