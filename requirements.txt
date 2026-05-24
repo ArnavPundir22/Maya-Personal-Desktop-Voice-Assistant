@@ -8,6 +8,7 @@ pyttsx3>=2.90
 
 # AI Integration
 google-genai>=2.6.0
+edge-tts>=6.1.9
 
 # System Utilities
 psutil>=5.9.0
@@ -16,3 +17,4 @@ requests>=2.31.0
 wikipedia>=1.4.0
 screen-brightness-control>=0.27.0
 PyAutoGUI>=0.9.54
+feedparser>=6.0.0

@@ -1,5 +1,5 @@
 """
-System operations for Devin AI Assistant (Ubuntu/Linux).
+System operations for Maya AI Assistant (Ubuntu/Linux).
 Handles volume, brightness, apps, system info, media, screenshots, etc.
 """
 import os

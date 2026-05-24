@@ -14,10 +14,15 @@ Featuring a premium **PyQt5 dashboard**, **animated audio waveforms**, and an in
 ---
 
 ## 🎨 Preview & UI Highlights
+<p align="center">
+  <img src="devin/assets/maya_face.png" width="380" alt="Maya Cyber Face Avatar">
+</p>
+
 - **Glassmorphism Theme:** A sleek, curated dark aesthetic built with modern typography and gradients.
-- **Dynamic Waveform Visualizer:** Re-renders in real-time to match active listening and speaking states.
+- **Cybernetic AI Face Backdrop:** Animated cyberpunk-style avatar with glowing cybernetic lines, revolving HUD status indicators, reactive audio waveform mouth movements, and laser thinking scanners.
+- **Focus & Full Face Modes:** Click the chat toggle button (`💬`) to slide out the text chat panel, instantly switching between split-screen dashboard and pure voice face focus modes.
 - **Thread-Safe Chat Bubbles:** Separate styled blocks for user queries and Maya's responses.
-- **Settings Dialog:** Input and securely store your Gemini API Key directly inside the app.
+- **Settings Dialog:** Customize the assistant's name, switch between Edge TTS neural voice engines, and securely update your Gemini API Key.
 
 ---
 
@@ -55,9 +60,11 @@ Maya-Personal-Desktop-Voice-Assistant/
 ├── README.md              # Project documentation
 └── devin/                 # Package directory
     ├── __init__.py        # Versioning & package definition
+    ├── assets/            # Graphical assets and UI backdrops
+    │   └── maya_face.png  # Futuristic cyberpunk avatar face
     ├── ai_engine.py       # Google Gemini integration and fallback logic
     ├── assistant.py       # Core command routing and regex parser
-    ├── gui.py             # Premium PyQt5 UI, Threads & Waveform logic
+    ├── gui.py             # Premium PyQt5 UI, Threads & Face logic
     └── system_ops.py      # Ubuntu system shell wrappers and utilities
 ```
 

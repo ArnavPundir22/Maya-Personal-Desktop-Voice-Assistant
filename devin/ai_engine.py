@@ -2,12 +2,14 @@
 AI Engine for Maya Assistant.
 Integrates with Google Gemini (via google-genai SDK) for intelligent responses.
 Falls back to a smart rule-based engine if no API key is configured.
+Real-time weather/news context is injected into every Gemini request.
 """
 import os
 import json
 import datetime
 import random
 import time
+import threading
 
 # ── Gemini Setup (google-genai SDK) ─────────────────────────────
 try:
@@ -20,12 +22,16 @@ except ImportError:
 CONFIG_DIR = os.path.expanduser("~/.config/maya")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
 
-SYSTEM_PROMPT = """You are Maya, a friendly and intelligent AI desktop assistant running on Ubuntu Linux.
+SYSTEM_PROMPT = """You are {ai_name}, a friendly and intelligent AI desktop assistant running on Ubuntu Linux.
 You are helpful, witty, and concise. Keep responses under 3 sentences unless the user asks for detail.
 You can help with general knowledge, coding, math, science, writing, and casual conversation.
 If asked about system tasks (volume, brightness, apps), note that you handle those through system commands.
 Current date/time: {datetime}
-Be warm and personable. Address the user respectfully."""
+Be warm and personable. Address the user respectfully.
+
+--- LIVE REAL-TIME DATA (use this to answer questions about current events, weather, news) ---
+{live_context}
+--- END LIVE DATA ---"""
 
 # Models to try in order — newer/lite models often have separate quotas
 GEMINI_MODELS = [
@@ -45,6 +51,11 @@ def load_config():
         except:
             pass
     return {}
+
+
+def load_ai_name() -> str:
+    """Return the configured AI name (defaults to 'Maya')."""
+    return load_config().get("ai_name", "Maya")
 
 def save_config(config):
     """Save config to file."""
@@ -74,7 +85,18 @@ class AIEngine:
         self.client = None
         self.active_model = None
         self.history = []
+        self._live_context = ""
         self._init_gemini()
+        # Warm-up live context in background so it's ready quickly
+        threading.Thread(target=self._refresh_live_context, daemon=True).start()
+
+    def _refresh_live_context(self):
+        """Refresh real-time weather/news context (called in background thread)."""
+        try:
+            from devin.realtime_data import get_live_context_snippet
+            self._live_context = get_live_context_snippet()
+        except Exception as e:
+            self._live_context = ""
 
     def _init_gemini(self):
         """Initialize Gemini client if available and configured."""
@@ -133,8 +155,12 @@ class AIEngine:
 
     def _try_gemini(self, message, retries=2):
         """Try to get a Gemini response with retry logic across models."""
+        # Refresh live context in background if stale, but use what we have now
+        threading.Thread(target=self._refresh_live_context, daemon=True).start()
         system_instruction = SYSTEM_PROMPT.format(
-            datetime=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            ai_name=load_ai_name(),
+            datetime=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            live_context=self._live_context or "(Live data not yet loaded or unavailable)"
         )
 
         # Build conversation contents (last 10 exchanges)

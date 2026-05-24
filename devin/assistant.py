@@ -19,6 +19,7 @@ from devin.system_ops import (
     take_screenshot, calculate, get_weather, lock_screen
 )
 from devin.ai_engine import AIEngine, set_api_key
+from devin import realtime_data as rt
 
 
 def replace_number_words(text):
@@ -97,6 +98,22 @@ class MayaAssistant(QObject):
                 else:
                     return "⚠️ API key saved but couldn't connect to Gemini. Please check the key."
             return "Please provide the API key: 'set api key YOUR_KEY_HERE'"
+
+        # ── Weather API Key ──
+        if re.search(r'set\s+weather\s+(?:api\s+)?key', query_clean):
+            key = re.sub(r'^set\s+weather\s+(?:api\s+)?key\s*', '', text.strip(), flags=re.IGNORECASE).strip()
+            if key:
+                rt.save_api_keys(owm_api_key=key)
+                return "✅ OpenWeatherMap API key saved! Detailed weather data is now enabled."
+            return "Please provide the key: 'set weather key YOUR_OWM_KEY'"
+
+        # ── News API Key ──
+        if re.search(r'set\s+news\s+(?:api\s+)?key', query_clean):
+            key = re.sub(r'^set\s+news\s+(?:api\s+)?key\s*', '', text.strip(), flags=re.IGNORECASE).strip()
+            if key:
+                rt.save_api_keys(news_api_key=key)
+                return "✅ NewsAPI key saved! Full news access is now enabled."
+            return "Please provide the key: 'set news key YOUR_NEWS_API_KEY'"
 
         # ── Time & Date ──
         if any(w in query_clean for w in ['what time', 'current time', 'whats the time', 'tell me the time']):
@@ -192,7 +209,7 @@ class MayaAssistant(QObject):
                 'google': 'https://www.google.com',
                 'youtube': 'https://www.youtube.com',
                 'chatgpt': 'https://chat.openai.com',
-                'chat gpt': 'https://chat.openai.com',
+                'chat gpt': 'https://chatgpt.com',
                 'github': 'https://github.com',
                 'gmail': 'https://mail.google.com',
                 'reddit': 'https://www.reddit.com',
@@ -252,11 +269,74 @@ class MayaAssistant(QObject):
             except:
                 return f"Could not find Wikipedia article for: {topic}"
 
-        # ── Weather ──
+        # ── Weather (enhanced with real-time module) ──
         weather_match = re.search(r'weather\s*(?:in|for|at)?\s*(.*)', query_clean)
         if weather_match or 'weather' in query_clean:
             city = weather_match.group(1).strip() if weather_match else ""
-            return f"🌤️ {get_weather(city)}"
+            # Multi-day forecast?
+            day_match = re.search(r'(\d+)[- ]day|next\s+(\d+)\s+day', query_clean)
+            if day_match or any(w in query_clean for w in ['forecast', 'week', 'tomorrow']):
+                days = int(day_match.group(1) or day_match.group(2)) if day_match else 3
+                days = min(days, 7)
+                return rt.get_weather_forecast(city, days)
+            return rt.get_weather_detailed(city)
+
+        # ── News ──
+        news_match = re.search(
+            r'(?:latest|top|recent|current|today[s\']?)?\s*news\s*(?:about|on|for)?\s*(.*)',
+            query_clean
+        )
+        if news_match or any(w in query_clean for w in ['headlines', 'whats happening', 'current events']):
+            topic = ""
+            if news_match:
+                topic = news_match.group(1).strip()
+            # Count requested?
+            count_match = re.search(r'(\d+)\s+news|news\s+(\d+)', query_clean)
+            count = int(count_match.group(1) or count_match.group(2)) if count_match else 5
+            count = min(count, 10)
+            return rt.get_news(topic, count)
+
+        # ── Cryptocurrency ──
+        crypto_kw = ['bitcoin', 'btc', 'ethereum', 'eth', 'crypto', 'dogecoin', 'doge',
+                     'solana', 'sol', 'binance', 'bnb', 'ripple', 'xrp', 'cardano', 'ada',
+                     'litecoin', 'ltc', 'polkadot', 'polygon', 'matic', 'avalanche', 'avax',
+                     'chainlink', 'link', 'uniswap', 'uni']
+        if any(w in query_clean for w in crypto_kw):
+            # Market overview?
+            if any(w in query_clean for w in ['market', 'top', 'overview', 'all']):
+                return rt.get_crypto_market_overview(5)
+            # Specific coin
+            for kw in crypto_kw:
+                if kw in query_clean:
+                    return rt.get_crypto_price(kw)
+            return rt.get_crypto_market_overview(5)
+
+        # ── Stocks ──
+        stock_match = re.search(
+            r'(?:stock|share|price|quote)\s+(?:of\s+|for\s+)?([A-Za-z]{1,5})',
+            query_clean
+        )
+        if not stock_match:
+            # "TSLA stock", "AAPL price"
+            stock_match = re.search(
+                r'\b([A-Z]{2,5})\b\s+(?:stock|share|price|quote)',
+                text  # use original case
+            )
+        if stock_match:
+            ticker = stock_match.group(1).upper()
+            return rt.get_stock_price(ticker)
+
+        # ── Sunrise / Sunset ──
+        if any(w in query_clean for w in ['sunrise', 'sunset', 'dawn', 'dusk', 'golden hour']):
+            sun_match = re.search(r'(?:sunrise|sunset|dawn|dusk)\s*(?:in|for|at)?\s*(.*)', query_clean)
+            city = sun_match.group(1).strip() if sun_match and sun_match.group(1).strip() else ""
+            return rt.get_sun_times(city)
+
+        # ── Holidays ──
+        if any(w in query_clean for w in ['holiday', 'holidays', 'public holiday', 'national holiday']):
+            country_match = re.search(r'(?:holiday|holidays)\s+(?:in|for)\s+([a-z]{2,3})', query_clean)
+            country = country_match.group(1).upper() if country_match else "IN"
+            return rt.get_upcoming_holidays(country)
 
         # ── System Info ──
         if any(w in query_clean for w in ['system info', 'system status', 'how is my system',
@@ -298,6 +378,19 @@ class MayaAssistant(QObject):
         if any(w in query_clean for w in ['running apps', 'running processes', 'active apps', 'list apps']):
             apps = get_running_apps()[:20]
             return "📋 Running applications:\n" + ", ".join(apps)
+
+        # ── Real-Time Help ──
+        if any(w in query_clean for w in ['what can you do', 'help', 'commands', 'features']):
+            return (
+                "Here's what I can do in real-time:\n"
+                "🌦️ Weather: 'weather in Delhi', 'forecast for London'\n"
+                "📰 News: 'latest news', 'news about AI', 'top 5 headlines'\n"
+                "💰 Crypto: 'bitcoin price', 'ethereum', 'top 5 crypto'\n"
+                "📊 Stocks: 'TSLA stock', 'AAPL price', 'price of GOOGL'\n"
+                "☀️ Sun times: 'sunrise today', 'sunset in Mumbai'\n"
+                "🎉 Holidays: 'holidays in US', 'upcoming holidays'\n"
+                "Plus volume, brightness, apps, screenshots, system info & AI chat!"
+            )
 
         # ── Exit ──
         if query_clean in ('exit', 'quit', 'goodbye', 'bye', 'shut down maya', 'close maya'):
