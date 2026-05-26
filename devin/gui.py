@@ -109,6 +109,28 @@ def _save_ai_name(name: str):
     except Exception:
         pass
 
+def _load_listen_language() -> str:
+    """Return the saved listening language (defaults to 'en-IN')."""
+    try:
+        with open(CONFIG_FILE) as f:
+            return json.load(f).get("listen_language", "en-IN")
+    except Exception:
+        return "en-IN"
+
+def _save_listen_language(lang: str):
+    """Persist the listening language to config."""
+    os.makedirs(CONFIG_DIR, exist_ok=True)
+    try:
+        config = {}
+        if os.path.exists(CONFIG_FILE):
+            with open(CONFIG_FILE) as f:
+                config = json.load(f)
+        config["listen_language"] = lang
+        with open(CONFIG_FILE, "w") as f:
+            json.dump(config, f, indent=2)
+    except Exception:
+        pass
+
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QPushButton, QTextBrowser, QFrame,
@@ -490,6 +512,38 @@ class SettingsDialog(QDialog):
         v_layout.addStretch()
         tabs.addTab(voice_tab, "🔊 Voice")
 
+        # ── Tab 4: Language ──
+        lang_tab = QWidget()
+        l_layout = QFormLayout(lang_tab)
+        l_layout.setSpacing(14)
+        l_layout.setContentsMargins(16, 16, 16, 16)
+        
+        self.lang_combo = QComboBox()
+        self.lang_map = {
+            "English (India)": "en-IN",
+            "English (US)": "en-US",
+            "Hindi (India)": "hi-IN"
+        }
+        for name in self.lang_map:
+            self.lang_combo.addItem(name)
+            
+        current_lang = _load_listen_language()
+        for i in range(self.lang_combo.count()):
+            if self.lang_map[self.lang_combo.itemText(i)] == current_lang:
+                self.lang_combo.setCurrentIndex(i)
+                break
+                
+        l_layout.addRow("🌐 Listening Language:", self.lang_combo)
+        
+        lang_hint = QLabel(
+            "Select the language you will speak in.\n"
+            "This applies to the voice recognition engine."
+        )
+        lang_hint.setStyleSheet(f"color: {COLORS['text_dim']}; font-size: 11px;")
+        lang_hint.setWordWrap(True)
+        l_layout.addRow("", lang_hint)
+        tabs.addTab(lang_tab, "🌐 Language")
+
         layout.addWidget(tabs)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
@@ -520,6 +574,9 @@ class SettingsDialog(QDialog):
 
     def get_ai_name(self):
         return self.name_input.text().strip() or "Maya"
+
+    def get_listen_language(self):
+        return self.lang_map[self.lang_combo.currentText()]
 
 
 # ── Standalone TTS helpers (called from any thread) ─────────────
@@ -600,6 +657,7 @@ class MayaWindow(QMainWindow):
     _set_waveform = pyqtSignal(bool)           # active state
     _set_face_state = pyqtSignal(str)          # face state ("idle", "listening", "thinking", "speaking")
     _set_face_subtitle = pyqtSignal(str)       # face bottom subtitle text
+    _set_active_ui = pyqtSignal(bool)          # update UI to reflect active/standby state
 
     def __init__(self):
         super().__init__()
@@ -618,10 +676,17 @@ class MayaWindow(QMainWindow):
         self._tts_process = None
         self._pyttsx3_engine = None
         self.recognizer = sr.Recognizer()
+        
+        # Make listening much more forgiving of natural pauses so it doesn't cut off mid-sentence
+        self.recognizer.energy_threshold = 300  # Fixed, sensitive threshold
+        self.recognizer.dynamic_energy_threshold = False
+        self.recognizer.pause_threshold = 3.0
+        self.recognizer.non_speaking_duration = 0.5
 
-        # Load saved voice preset and AI name
+        # Load saved voice preset, AI name, and language
         self._voice_preset = _load_voice_config()
         self._ai_name = _load_ai_name()
+        self._listen_language = _load_listen_language()
 
         # Apply name to window title now that self._ai_name is set
         self.setWindowTitle(f"{self._ai_name} AI — Desktop Assistant")
@@ -826,7 +891,31 @@ class MayaWindow(QMainWindow):
         self._update_status.connect(self._do_update_status)
         self._set_face_state.connect(self.ai_face_widget.set_state)
         self._set_face_subtitle.connect(self.ai_face_widget.set_subtitle)
+        self._set_active_ui.connect(self._do_set_active_ui)
         self.assistant.ai_status_changed.connect(lambda _: self._update_ai_badge())
+        self.assistant.window_action_signal.connect(self._do_handle_window_action)
+
+    def _do_handle_window_action(self, action: str):
+        if action == "minimize":
+            self.showMinimized()
+        elif action == "restore":
+            self.showNormal()
+            self.activateWindow()
+
+    def _do_set_active_ui(self, active: bool):
+        self.active_mode = active
+        if active:
+            self.voice_btn.setStyleSheet(f"""
+                QPushButton {{ background: {COLORS['primary']}; border-radius: 22px;
+                               font-size: 20px; color: {COLORS['bg_darkest']}; }}
+                QPushButton:hover {{ background: {COLORS['primary_dim']}; }}
+            """)
+        else:
+            self.voice_btn.setStyleSheet(f"""
+                QPushButton {{ background: {COLORS['text_dim']}; border-radius: 22px;
+                               font-size: 20px; color: {COLORS['bg_darkest']}; }}
+                QPushButton:hover {{ background: {COLORS['border']}; }}
+            """)
 
     def _update_ai_badge(self):
         if self.assistant.ai.is_ai_available:
@@ -896,6 +985,13 @@ class MayaWindow(QMainWindow):
             self._speak(response)
             QApplication.instance().quit()
             return
+            
+        if "Going into standby" in response:
+            self.active_mode = False
+            self._set_active_ui.emit(False)
+        elif "I'm awake!" in response:
+            self.active_mode = True
+            self._set_active_ui.emit(True)
 
         self._speak(response)
         if self.active_mode:
@@ -906,21 +1002,12 @@ class MayaWindow(QMainWindow):
             self._update_status.emit("💤 Standby — say 'listen' to wake me up")
 
     def _toggle_voice(self):
-        self.active_mode = not self.active_mode
-        if self.active_mode:
-            self.voice_btn.setStyleSheet(f"""
-                QPushButton {{ background: {COLORS['primary']}; border-radius: 22px;
-                               font-size: 20px; color: {COLORS['bg_darkest']}; }}
-                QPushButton:hover {{ background: {COLORS['primary_dim']}; }}
-            """)
+        new_state = not self.active_mode
+        self._set_active_ui.emit(new_state)
+        if new_state:
             self._set_face_state.emit("listening")
             self._update_status.emit("🎤 Listening... (say something or type a command)")
         else:
-            self.voice_btn.setStyleSheet(f"""
-                QPushButton {{ background: {COLORS['text_dim']}; border-radius: 22px;
-                               font-size: 20px; color: {COLORS['bg_darkest']}; }}
-                QPushButton:hover {{ background: {COLORS['border']}; }}
-            """)
             self._set_face_state.emit("idle")
             self._update_status.emit("💤 Voice off — type commands or click 🎤 to re-enable")
 
@@ -966,6 +1053,16 @@ class MayaWindow(QMainWindow):
                     self._ai_name,
                     f"🎙️ Voice changed to {preset} ({engine_label}). "
                     "I'll use it from now on!"
+                )
+
+            # Save and apply language
+            lang = dialog.get_listen_language()
+            if lang != getattr(self, '_listen_language', 'en-IN'):
+                self._listen_language = lang
+                _save_listen_language(lang)
+                self._append_message.emit(
+                    self._ai_name,
+                    f"🌐 Recognition language changed! I'll now listen in {lang}."
                 )
 
     def _clean_text_for_speech(self, text):
@@ -1016,14 +1113,19 @@ class MayaWindow(QMainWindow):
         """Listen for voice input (runs in worker thread). Returns recognized text or empty string."""
         try:
             with sr.Microphone() as source:
-                self._update_status.emit("🎤 Listening...")
-                self._set_face_state.emit("listening")
-                self.recognizer.adjust_for_ambient_noise(source, duration=0.3)
-                audio = self.recognizer.listen(source, timeout=8, phrase_time_limit=15)
-                self._set_face_state.emit("thinking")
-                self._update_status.emit("💭 Processing...")
+                if self.active_mode:
+                    self._update_status.emit("🎤 Listening...")
+                    self._set_face_state.emit("listening")
+                else:
+                    self._update_status.emit("💤 Standby — say 'listen' to wake me up")
+                    self._set_face_state.emit("idle")
+                # Listen longer to capture full commands without cutting off
+                audio = self.recognizer.listen(source, timeout=12, phrase_time_limit=30)
+                if self.active_mode:
+                    self._set_face_state.emit("thinking")
+                    self._update_status.emit("💭 Processing...")
 
-            text = self.recognizer.recognize_google(audio)
+            text = self.recognizer.recognize_google(audio, language=getattr(self, '_listen_language', 'en-IN'))
             return text.strip()
         except sr.WaitTimeoutError:
             if self.active_mode:
@@ -1077,6 +1179,7 @@ class MayaWindow(QMainWindow):
                         query_lower = text.lower().strip()
                         if "shut up" in query_lower or "stop listening" in query_lower:
                             self.active_mode = False
+                            self._set_active_ui.emit(False)
                             response = "Going into standby. Say 'listen' to wake me up."
                             self._append_message.emit("You", text)
                             self._append_message.emit(self._ai_name, response)
@@ -1094,6 +1197,7 @@ class MayaWindow(QMainWindow):
                     text = self._listen()
                     if text and HOTWORD in text.lower():
                         self.active_mode = True
+                        self._set_active_ui.emit(True)
                         self._append_message.emit(self._ai_name, "I'm awake! What do you need?")
                         self._speak("I'm awake! What do you need?")
                         self._update_status.emit("🎤 Listening...")

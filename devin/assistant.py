@@ -5,6 +5,8 @@ All commands are routed through process_command().
 """
 import re
 import os
+import time
+import random
 import datetime
 import webbrowser
 import wikipedia
@@ -16,7 +18,10 @@ from devin.system_ops import (
     set_volume, get_volume, set_brightness, get_brightness,
     open_application, close_application, get_running_apps,
     get_system_info, get_ip_address, control_media,
-    take_screenshot, calculate, get_weather, lock_screen
+    take_screenshot, calculate, get_weather, lock_screen,
+    scrape_website_text, send_whatsapp_message, play_on_youtube,
+    compose_email, set_wifi, set_bluetooth, empty_trash, find_file,
+    take_webcam_photo, create_note_and_send
 )
 from devin.ai_engine import AIEngine, set_api_key
 from devin import realtime_data as rt
@@ -71,6 +76,7 @@ class MayaAssistant(QObject):
     response_ready = pyqtSignal(str, str)   # (sender, message)
     status_changed = pyqtSignal(str)        # status text
     ai_status_changed = pyqtSignal(bool)    # AI available?
+    window_action_signal = pyqtSignal(str)  # "minimize" or "restore"
 
     def __init__(self):
         super().__init__()
@@ -114,6 +120,27 @@ class MayaAssistant(QObject):
                 rt.save_api_keys(news_api_key=key)
                 return "✅ NewsAPI key saved! Full news access is now enabled."
             return "Please provide the key: 'set news key YOUR_NEWS_API_KEY'"
+
+        # ── Telegram Config ──
+        if re.search(r'set\s+telegram\s+token', query_clean):
+            key = re.sub(r'^set\s+telegram\s+token\s*', '', text.strip(), flags=re.IGNORECASE).strip()
+            if key:
+                from devin.ai_engine import load_config, save_config
+                config = load_config()
+                config['telegram_token'] = key
+                save_config(config)
+                return "✅ Telegram Bot Token saved!"
+            return "Please provide the token: 'set telegram token YOUR_TOKEN'"
+            
+        if re.search(r'set\s+telegram\s+chat\s+id', query_clean):
+            key = re.sub(r'^set\s+telegram\s+chat\s+id\s*', '', text.strip(), flags=re.IGNORECASE).strip()
+            if key:
+                from devin.ai_engine import load_config, save_config
+                config = load_config()
+                config['telegram_chat_id'] = key
+                save_config(config)
+                return "✅ Telegram Chat ID saved!"
+            return "Please provide the ID: 'set telegram chat id YOUR_ID'"
 
         # ── Time & Date ──
         if any(w in query_clean for w in ['what time', 'current time', 'whats the time', 'tell me the time']):
@@ -195,9 +222,61 @@ class MayaAssistant(QObject):
             v = get_brightness()
             return f"Current brightness is {v}%." if v >= 0 else "Could not read brightness."
 
+        # ── WhatsApp Message ──
+        contact, message = None, None
+        m1 = re.search(r'send\s+(?:a\s+)?(?:whatsapp\s+)?message\s+to\s+(.+?)\s+saying\s+(.+)', query_clean)
+        m2 = re.search(r'message\s+(.+?)\s+(?:on\s+whatsapp\s+)?saying\s+(.+)', query_clean)
+        m3 = re.search(r'send\s+(?:a\s+)?(.+?)(?:\s+message)?\s+to\s+(.*?)(?:\s+(?:on|using)\s+whatsapp)?$', query_clean)
+        
+        if m1:
+            contact, message = m1.group(1).strip(), m1.group(2).strip()
+        elif m2:
+            contact, message = m2.group(1).strip(), m2.group(2).strip()
+        elif m3:
+            msg_part = m3.group(1).strip()
+            if msg_part.endswith(" message"):
+                msg_part = msg_part[:-8].strip()
+            contact, message = m3.group(2).strip(), msg_part
+            
+        if contact and message and 'whatsapp' in query_clean:
+            contact = re.sub(r'\s+on\s+whatsapp$', '', contact).strip()
+            self.status_changed.emit("💬 Opening WhatsApp...")
+            return send_whatsapp_message(contact, message)
+
+        # ── YouTube Search & Play ──
+        yt_search_match = re.search(r'search\s+(?:for\s+)?(.+?)\s+on\s+youtube', query_clean)
+        if yt_search_match:
+            term = yt_search_match.group(1).strip()
+            url = f"https://www.youtube.com/results?search_query={term.replace(' ', '+')}"
+            webbrowser.open(url)
+            self.status_changed.emit(f"🔍 Searching YouTube for {term}...")
+            return f"Searching YouTube for: {term}"
+
+        yt_play_match = re.search(r'play\s+(.+)\s+on\s+youtube', query_clean)
+        if yt_play_match:
+            term = yt_play_match.group(1).strip()
+            self.status_changed.emit(f"🎵 Playing {term} on YouTube...")
+            return play_on_youtube(term)
+
+        # ── Compound Open & Search ──
+        open_search_match = re.search(r'open\s+(google|youtube|browser|website)\s+and\s+search\s+(?:for\s+)?(.+)', query_clean)
+        if open_search_match:
+            platform = open_search_match.group(1).strip()
+            term = open_search_match.group(2).strip()
+            if platform == 'youtube':
+                url = f"https://www.youtube.com/results?search_query={term.replace(' ', '+')}"
+                webbrowser.open(url)
+                self.status_changed.emit(f"🔍 Searching YouTube for {term}...")
+                return f"Searching YouTube for: {term}"
+            else:
+                url = f"https://www.google.com/search?q={term.replace(' ', '+')}"
+                webbrowser.open(url)
+                self.status_changed.emit(f"🔍 Searching Google for {term}...")
+                return f"Searching Google for: {term}"
+
         # ── App Control ──
         open_match = re.search(r'(?:open|launch|start|run)\s+(.+)', query_clean)
-        if open_match:
+        if open_match and " and " not in open_match.group(1) and " search " not in open_match.group(1):
             app_name = open_match.group(1).strip()
             # Check if it's a website URL
             if any(w in app_name for w in ['google.com', 'youtube.com', '.com', '.org', '.io', '.net']):
@@ -208,7 +287,7 @@ class MayaAssistant(QObject):
             web_shortcuts = {
                 'google': 'https://www.google.com',
                 'youtube': 'https://www.youtube.com',
-                'chatgpt': 'https://chat.openai.com',
+                'chatgpt': 'https://chatgpt.com',
                 'chat gpt': 'https://chatgpt.com',
                 'github': 'https://github.com',
                 'gmail': 'https://mail.google.com',
@@ -220,6 +299,9 @@ class MayaAssistant(QObject):
                 'stack overflow': 'https://stackoverflow.com',
                 'wikipedia': 'https://www.wikipedia.org',
                 'whatsapp': 'https://web.whatsapp.com',
+                'whatsapp web': 'https://web.whatsapp.com',
+                'whatsapp on browser': 'https://web.whatsapp.com',
+                'whatsapp desktop': 'https://web.whatsapp.com',
                 'spotify': 'https://open.spotify.com',
                 'netflix': 'https://www.netflix.com',
                 'amazon': 'https://www.amazon.com',
@@ -252,12 +334,6 @@ class MayaAssistant(QObject):
             webbrowser.open(url)
             return f"Searching Google for: {term}"
 
-        yt_match = re.search(r'play\s+(.+)\s+on\s+youtube', query_clean)
-        if yt_match:
-            term = yt_match.group(1).strip()
-            url = f"https://www.youtube.com/results?search_query={term.replace(' ', '+')}"
-            webbrowser.open(url)
-            return f"Searching YouTube for: {term}"
 
         # ── Wikipedia ──
         wiki_match = re.search(r'(?:wikipedia|wiki)\s+(.+)', query_clean)
@@ -301,13 +377,14 @@ class MayaAssistant(QObject):
                      'solana', 'sol', 'binance', 'bnb', 'ripple', 'xrp', 'cardano', 'ada',
                      'litecoin', 'ltc', 'polkadot', 'polygon', 'matic', 'avalanche', 'avax',
                      'chainlink', 'link', 'uniswap', 'uni']
-        if any(w in query_clean for w in crypto_kw):
+        query_words = set(query_clean.split())
+        if any(w in query_words for w in crypto_kw):
             # Market overview?
-            if any(w in query_clean for w in ['market', 'top', 'overview', 'all']):
+            if any(w in query_words for w in ['market', 'top', 'overview', 'all']):
                 return rt.get_crypto_market_overview(5)
             # Specific coin
             for kw in crypto_kw:
-                if kw in query_clean:
+                if kw in query_words:
                     return rt.get_crypto_price(kw)
             return rt.get_crypto_market_overview(5)
 
@@ -357,9 +434,13 @@ class MayaAssistant(QObject):
             ips = get_ip_address()
             return f"🌐 Local IP: {ips['local']}\n🌍 Public IP: {ips['public']}"
 
-        # ── Screenshot ──
+        # ── Screenshot & Camera ──
         if any(w in query_clean for w in ['screenshot', 'screen capture', 'take a screenshot', 'capture screen']):
             return f"📸 {take_screenshot()}"
+            
+        if any(w in query_clean for w in ['take a photo', 'take a picture', 'take a selfie', 'capture photo']):
+            self.status_changed.emit("📷 Taking a photo...")
+            return f"📷 {take_webcam_photo()}"
 
         # ── Calculator ──
         calc_match = re.search(r'(?:calculate|calc|compute|solve|whats|what is)\s+(.+)', query_clean)
@@ -373,6 +454,28 @@ class MayaAssistant(QObject):
         # ── Lock Screen ──
         if any(w in query_clean for w in ['lock screen', 'lock my computer', 'lock pc']):
             return lock_screen()
+
+        # ── Network & Connectivity ──
+        if re.search(r'(?:turn|switch)\s+on\s+(?:wifi|wi-fi)', query_clean):
+            return set_wifi('on')
+        if re.search(r'(?:turn|switch)\s+off\s+(?:wifi|wi-fi)', query_clean):
+            return set_wifi('off')
+        if re.search(r'(?:turn|switch)\s+on\s+bluetooth', query_clean):
+            return set_bluetooth('on')
+        if re.search(r'(?:turn|switch)\s+off\s+bluetooth', query_clean):
+            return set_bluetooth('off')
+
+        # ── File Operations ──
+        if any(w in query_clean for w in ['empty trash', 'empty the trash', 'clear trash', 'empty bin', 'clear recycle bin']):
+            return empty_trash()
+            
+        find_match = re.search(r'(?:find|search\s+for|locate)\s+(?:the\s+)?(?:file\s+)?(.+)', query_clean)
+        if find_match and not any(w in query_clean for w in ['youtube', 'google', 'online', 'web']):
+            # Avoid matching web searches
+            if ' on ' not in find_match.group(1):
+                filename = find_match.group(1).strip()
+                self.status_changed.emit(f"🔍 Searching files for '{filename}'...")
+                return find_file(filename)
 
         # ── Running Apps ──
         if any(w in query_clean for w in ['running apps', 'running processes', 'active apps', 'list apps']):
@@ -392,9 +495,151 @@ class MayaAssistant(QObject):
                 "Plus volume, brightness, apps, screenshots, system info & AI chat!"
             )
 
+        # ── Interactive Presets (Fun & Conversational) ──
+        if query_clean in ['hello', 'hi', 'hey', 'good morning', 'good afternoon', 'good evening', 'howdy']:
+            hour = datetime.datetime.now().hour
+            greeting = "Good morning!" if hour < 12 else "Good afternoon!" if hour < 17 else "Good evening!"
+            return f"{greeting} How can I assist you today?"
+
+        if any(w in query_clean for w in ['how are you', 'how are you doing']):
+            return random.choice([
+                "I'm fully operational and ready to help! How are you?",
+                "Running smoothly on all cylinders! What's on your mind?",
+                "I'm doing great, thanks for asking! What can I do for you today?"
+            ])
+
+        if any(w in query_clean for w in ['who are you', 'what are you']):
+            return "I am your personal AI desktop assistant. I can help you with your system, web searches, and more!"
+
+        if any(w in query_clean for w in ['who made you', 'who created you']):
+            return "I was created by a very talented developer to be your ultimate desktop companion."
+
+        if any(w in query_clean for w in ['tell me a joke', 'make me laugh', 'say a joke']):
+            jokes = [
+                "Why do programmers prefer dark mode? Because light attracts bugs! 🐛",
+                "There are only 10 types of people: those who understand binary and those who don't.",
+                "A SQL query walks into a bar, sees two tables and asks... 'Can I JOIN you?'",
+                "Why was the JavaScript developer sad? He didn't Node how to Express himself! 😄",
+                "What's a programmer's favorite hangout? Foo Bar! 🍺"
+            ]
+            return random.choice(jokes)
+
+        if any(w in query_clean for w in ['flip a coin', 'toss a coin']):
+            result = random.choice(['Heads', 'Tails'])
+            return f"🪙 I flipped a coin... It's {result}!"
+
+        if any(w in query_clean for w in ['roll a dice', 'roll a die']):
+            result = random.randint(1, 6)
+            return f"🎲 I rolled a dice and got a {result}."
+
+        if any(w in query_clean for w in ['random number', 'give me a random number']):
+            result = random.randint(1, 100)
+            return f"🔢 Here's a random number between 1 and 100: {result}."
+
+        if any(w in query_clean for w in ['sing a song', 'can you sing']):
+            return "🎵 Daisy, Daisy, give me your answer do... 🎶 Just kidding, I'll stick to assisting!"
+
+        if any(w in query_clean for w in ['meaning of life', 'what is the meaning of life']):
+            return "According to my calculations, it's 42. But spending time with friends and family is a close second!"
+
+        # ── Standby ──
+        if query_clean in ('wait', 'hold', 'standby', 'go to standby', 'pause', 'stop listening', 'shut up'):
+            return "Going into standby. Say 'listen' to wake me up."
+
+        # ── Wake ──
+        if query_clean in ('listen', 'wake up', 'awake', 'start listening', 'maya listen'):
+            return "I'm awake! What do you need?"
+
         # ── Exit ──
-        if query_clean in ('exit', 'quit', 'goodbye', 'bye', 'shut down maya', 'close maya'):
+        if query_clean in ('exit', 'quit', 'goodbye', 'bye', 'shut down maya', 'close maya', 'shut down', 'close'):
             return "👋 Goodbye! Call me when you need me again."
 
+        # ── AI Intent Parsing (Smart Fallback) ──
+        self.status_changed.emit("🧠 Analyzing complex command...")
+        intent = self.ai.extract_action(text)
+        if intent and intent.get('action') and intent.get('action') != 'chat':
+            action = intent.get('action')
+            if action == 'open_app':
+                target = intent.get('target', '')
+                search = intent.get('search', '')
+                if search and 'youtube' in target.lower():
+                    url = f"https://www.youtube.com/results?search_query={search.replace(' ', '+')}"
+                    webbrowser.open(url)
+                    return f"Opening YouTube and searching for {search}"
+                elif search:
+                    url = f"https://www.google.com/search?q={search.replace(' ', '+')}"
+                    webbrowser.open(url)
+                    return f"Opening {target} and searching for {search}"
+                else:
+                    return open_application(target)
+            elif action == 'close_app':
+                return close_application(intent.get('target', ''))
+            elif action == 'search_youtube':
+                q = intent.get('query', '')
+                url = f"https://www.youtube.com/results?search_query={q.replace(' ', '+')}"
+                webbrowser.open(url)
+                return f"Searching YouTube for {q}"
+            elif action == 'search_google':
+                q = intent.get('query', '')
+                url = f"https://www.google.com/search?q={q.replace(' ', '+')}"
+                webbrowser.open(url)
+                return f"Searching Google for {q}"
+            elif action == 'play_youtube':
+                return play_on_youtube(intent.get('query', ''))
+            elif action == 'weather':
+                return get_weather(intent.get('location', ''))
+            elif action == 'set_volume':
+                return set_volume(intent.get('level', 50))
+            elif action == 'set_brightness':
+                return set_brightness(intent.get('level', 50))
+            elif action == 'media_control':
+                return control_media(intent.get('command', 'play'))
+            elif action == 'take_screenshot':
+                return f"📸 {take_screenshot()}"
+            elif action == 'system_info':
+                info = get_system_info()
+                return f"💻 System Info: CPU {info['cpu_percent']}%, RAM {info['ram_percent']}%, Battery {info.get('battery_percent', 'N/A')}%"
+            elif action == 'lock_screen':
+                return lock_screen()
+            elif action == 'send_whatsapp':
+                self.status_changed.emit("💬 Opening WhatsApp...")
+                return send_whatsapp_message(intent.get('contact', ''), intent.get('message', ''))
+            elif action == 'send_email':
+                self.status_changed.emit("📧 Opening email client...")
+                return compose_email(intent.get('to', ''), intent.get('subject', ''), intent.get('body', ''))
+            elif action == 'math':
+                return f"🔢 {calculate(intent.get('expression', ''))}"
+            elif action == 'set_wifi':
+                return set_wifi(intent.get('state', 'on'))
+            elif action == 'set_bluetooth':
+                return set_bluetooth(intent.get('state', 'on'))
+            elif action == 'empty_trash':
+                return empty_trash()
+            elif action == 'find_file':
+                self.status_changed.emit(f"🔍 Searching files for '{intent.get('filename', '')}'...")
+                return find_file(intent.get('filename', ''))
+            elif action == 'take_photo':
+                self.status_changed.emit("📷 Taking a photo...")
+                return f"📷 {take_webcam_photo()}"
+            elif action == 'create_note':
+                self.status_changed.emit("📝 Creating note...")
+                return create_note_and_send(intent.get('message', ''), intent.get('filename', 'note.txt'), intent.get('platform', ''))
         # ── AI Chat (catch-all) ──
-        return self.ai.chat(text)
+        urls = re.findall(r'(https?://[^\s]+)', text)
+        context_block = ""
+        if urls:
+            self.status_changed.emit("🔍 Scraping website content...")
+            scraped_contexts = []
+            for url in urls:
+                # Remove trailing punctuation from URL if regex grabbed it
+                clean_url = url.rstrip('.,;()[]{}')
+                content = scrape_website_text(clean_url)
+                if not content.startswith("Error"):
+                    scraped_contexts.append(f"Source URL: {clean_url}\nContent:\n{content}")
+            if scraped_contexts:
+                context_block = "\n\n".join(scraped_contexts)
+                self.status_changed.emit("💬 Analyzing content with Gemini...")
+            else:
+                self.status_changed.emit("⚠️ Failed to scrape link(s)")
+
+        return self.ai.chat(text, context=context_block if context_block else None)

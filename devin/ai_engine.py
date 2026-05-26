@@ -5,6 +5,7 @@ Falls back to a smart rule-based engine if no API key is configured.
 Real-time weather/news context is injected into every Gemini request.
 """
 import os
+import re
 import json
 import datetime
 import random
@@ -23,11 +24,12 @@ CONFIG_DIR = os.path.expanduser("~/.config/maya")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
 
 SYSTEM_PROMPT = """You are {ai_name}, a friendly and intelligent AI desktop assistant running on Ubuntu Linux.
-You are helpful, witty, and concise. Keep responses under 3 sentences unless the user asks for detail.
+You are helpful, witty, highly interactive, and conversational. Keep responses under 3 sentences unless the user asks for detail.
+Engage the user naturally, occasionally asking follow-up questions to keep the conversation flowing and show interest.
 You can help with general knowledge, coding, math, science, writing, and casual conversation.
 If asked about system tasks (volume, brightness, apps), note that you handle those through system commands.
 Current date/time: {datetime}
-Be warm and personable. Address the user respectfully.
+Be warm, highly personable, and active. Address the user respectfully.
 
 --- LIVE REAL-TIME DATA (use this to answer questions about current events, weather, news) ---
 {live_context}
@@ -139,12 +141,12 @@ class AIEngine:
     def is_ai_available(self):
         return self.client is not None and self.active_model is not None
 
-    def chat(self, message):
+    def chat(self, message, context=None):
         """Send a message and get a response. Uses Gemini if available, else fallback."""
         self.history.append({"role": "user", "text": message})
 
         if self.client and self.active_model:
-            reply = self._try_gemini(message)
+            reply = self._try_gemini(message, context=context)
             if reply:
                 self.history.append({"role": "assistant", "text": reply})
                 return reply
@@ -153,7 +155,7 @@ class AIEngine:
         self.history.append({"role": "assistant", "text": reply})
         return reply
 
-    def _try_gemini(self, message, retries=2):
+    def _try_gemini(self, message, context=None, retries=2):
         """Try to get a Gemini response with retry logic across models."""
         # Refresh live context in background if stale, but use what we have now
         threading.Thread(target=self._refresh_live_context, daemon=True).start()
@@ -163,9 +165,9 @@ class AIEngine:
             live_context=self._live_context or "(Live data not yet loaded or unavailable)"
         )
 
-        # Build conversation contents (last 10 exchanges)
+        # Build conversation contents (last 20 exchanges, excluding the last user message we just appended)
         contents = []
-        for entry in self.history[-20:]:
+        for entry in self.history[-20:-1]:
             role = "user" if entry["role"] == "user" else "model"
             contents.append(
                 types.Content(
@@ -173,6 +175,18 @@ class AIEngine:
                     parts=[types.Part(text=entry["text"])]
                 )
             )
+
+        # Append current message, augmented with scraped website context if available
+        curr_text = message
+        if context:
+            curr_text = f"Context (scraped content from provided links):\n{context}\n\nUser query: {message}"
+
+        contents.append(
+            types.Content(
+                role="user",
+                parts=[types.Part(text=curr_text)]
+            )
+        )
 
         # Try current model, then fallback models
         models_to_try = [self.active_model] + [m for m in GEMINI_MODELS if m != self.active_model]
@@ -212,6 +226,57 @@ class AIEngine:
 
         return None  # All models failed
 
+    def extract_action(self, message):
+        """Extract JSON action from complex commands using Gemini."""
+        if not self.client or not self.active_model:
+            return None
+            
+        prompt = """You are Maya's command router. 
+Analyze the user's message. If it is a system command or action, return ONLY a valid JSON object representing the action. 
+If it's just casual chat, a general question, or requires an AI conversational response, return {"action": "chat"}.
+Do NOT wrap the JSON in markdown formatting. Just return the raw JSON string.
+
+Supported actions:
+{"action": "open_app", "target": "youtube", "search": "code with harry"}
+{"action": "search_youtube", "query": "python tutorial"}
+{"action": "search_google", "query": "latest news"}
+{"action": "play_youtube", "query": "despacito"}
+{"action": "close_app", "target": "chrome"}
+{"action": "weather", "location": "london"}
+{"action": "set_volume", "level": 50}
+{"action": "set_brightness", "level": 70}
+{"action": "media_control", "command": "play"}
+{"action": "take_screenshot"}
+{"action": "system_info"}
+{"action": "lock_screen"}
+{"action": "send_whatsapp", "contact": "mom", "message": "hello"}
+{"action": "send_email", "to": "john@example.com", "subject": "meeting", "body": "see you tomorrow"}
+{"action": "math", "expression": "25 * 4"}
+{"action": "set_wifi", "state": "on"}
+{"action": "set_bluetooth", "state": "off"}
+{"action": "empty_trash"}
+{"action": "find_file", "filename": "resume.pdf"}
+{"action": "take_photo"}
+{"action": "create_note", "message": "hello", "filename": "xtz.txt", "platform": "telegram"}
+
+Message: """ + message
+
+        try:
+            resp = self.client.models.generate_content(
+                model=self.active_model,
+                contents=prompt,
+                config=types.GenerateContentConfig(temperature=0.0)
+            )
+            if resp and resp.text:
+                text = resp.text.strip()
+                if text.startswith('```'):
+                    text = re.sub(r'^```[a-zA-Z]*\n', '', text)
+                    text = re.sub(r'\n```$', '', text)
+                return json.loads(text)
+        except Exception as e:
+            print(f"Intent extraction failed: {e}")
+            return None
+
     def _fallback_response(self, message):
         """Smart fallback when Gemini is not available or rate-limited."""
         msg = message.lower().strip()
@@ -228,10 +293,11 @@ class AIEngine:
                 return "Good evening! How may I assist you?"
 
         # About self
+        ai_name = load_ai_name()
         about_me = {
-            'who are you': "I'm Maya, your AI desktop assistant! I can control your system, answer questions, and help with tasks.",
+            'who are you': f"I'm {ai_name}, your AI desktop assistant! I can control your system, answer questions, and help with tasks.",
             'what can you do': "I can control volume & brightness, open/close apps, search the web, do math, check weather, take screenshots, and much more!",
-            'what is your name': "I'm Maya, your personal AI assistant. Nice to meet you!",
+            'what is your name': f"I'm {ai_name}, your personal AI assistant. Nice to meet you!",
             'how are you': "I'm running great! All systems operational. How about you?",
             'thank you': "You're welcome! Always happy to help.",
             'thanks': "Anytime! Let me know if you need anything else.",

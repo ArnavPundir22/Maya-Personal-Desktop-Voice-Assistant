@@ -44,6 +44,7 @@ Featuring a premium **PyQt5 dashboard**, **animated audio waveforms**, and an in
 *   📺 **Media Playback:** Pause, resume, skip, or change tracks for MPRIS-compatible players (Spotify, VLC, Chrome) using `playerctl` or `xdotool` key signals.
 
 ### 4. 🌐 Web & Utilities
+*   🌐 **Web Scraping:** Automatically detects URLs in messages, fetches clean content by removing script/nav/header boilerplate, and lets the Gemini AI analyze/summarize page details.
 *   🔍 **Web Search:** Instantly trigger Google searches or search and play video content directly on YouTube.
 *   📚 **Wikipedia:** Pulls concise, two-sentence summaries on any query topic.
 *   🌤️ **Real-Time Weather:** Retrieves instant weather reports for your location or any specified city using `wttr.in`.
